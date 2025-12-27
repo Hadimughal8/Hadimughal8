@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Terza</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'Arial',sans-serif;background:#0b1220;color:#fff;display:flex;justify-content:center;}
+.app{max-width:400px;width:100%;min-height:100vh;display:flex;flex-direction:column;}
+.header{padding:20px;text-align:center;font-size:24px;font-weight:bold;background:linear-gradient(90deg,#00c6ff,#0072ff);border-bottom-left-radius:20px;border-bottom-right-radius:20px;box-shadow:0 4px 10px rgba(0,0,0,0.3);}
+.screen{flex:1;padding:20px;display:none;}
+.screen.active{display:block;}
+.card{background:rgba(255,255,255,0.08);border-radius:20px;padding:20px;margin-bottom:20px;box-shadow:0 8px 20px rgba(0,255,255,0.2);}
+.balance{font-size:34px;font-weight:bold;color:#00ffcc;margin-top:10px;}
+.balancePKR{font-size:28px;font-weight:bold;color:#ffa500;margin-top:5px;}
+.timer{margin-top:10px;color:#ffcc00;font-weight:bold;}
+.btn{background:linear-gradient(90deg,#00ffcc,#00c6ff);border:none;padding:14px;width:100%;border-radius:16px;font-size:16px;font-weight:bold;cursor:pointer;margin-top:10px;transition:0.3s;}
+.btn:hover{transform:scale(1.03);}
+.btn:disabled{background:#333;color:#888;cursor:not-allowed;}
+.footer{display:flex;justify-content:space-around;padding:18px 0;background:#020617;border-top:1px solid rgba(255,255,255,0.15);}
+.footer button{background:none;border:none;color:#aaa;font-size:15px;font-weight:600;transition:0.3s;}
+.footer button.active{color:#00ffcc;font-weight:bold;}
+#taskButtons{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px;}
+input,select{width:100%;padding:12px;margin:10px 0;border-radius:12px;border:none;background:#1f2937;color:#fff;}
+#popup{display:none;position:fixed;inset:0;background:#000000cc;z-index:999;display:flex;justify-content:center;align-items:center;}
+#popupBox{background:#0b1220;padding:20px;border-radius:20px;width:90%;max-width:350px;box-shadow:0 8px 20px rgba(0,255,255,0.3);}
+.option{background:#1f2937;padding:12px;border-radius:12px;margin-top:10px;cursor:pointer;transition:0.3s;}
+.option:hover{background:#00c6ff;color:#000;}
+#toast{position:fixed;bottom:50px;left:50%;transform:translateX(-50%);background:#00ffcc;color:#000;padding:12px 20px;border-radius:12px;font-weight:bold;display:none;z-index:1000;box-shadow:0 4px 15px rgba(0,0,0,0.3);}
+</style>
+</head>
+<body>
+<div class="app">
+
+<div class="header">Terza</div>
+
+<!-- HOME -->
+<div class="screen active" id="home">
+  <div class="card">
+    <div>Balance (USD)</div>
+    <div class="balance">$<span id="balanceUSD">0</span></div>
+    <div>Balance (PKR)</div>
+    <div class="balancePKR">₨<span id="balancePKR">0</span></div>
+    <div>Tasks Completed: <span id="tasksCount">0</span> / 10</div>
+    <div class="timer">Next Reset In: <span id="timer">--:--:--</span></div>
+  </div>
+</div>
+
+<!-- TASKS -->
+<div class="screen" id="tasks">
+  <div class="card">
+    <h3>Daily Science Tasks</h3>
+    <div id="taskButtons"></div>
+  </div>
+</div>
+
+<!-- WITHDRAW -->
+<div class="screen" id="withdraw">
+  <div class="card">
+    <h3>Withdraw</h3>
+    <select id="paymentMethod">
+      <option value="">Select Payment Method</option>
+      <option value="JazzCash">JazzCash</option>
+      <option value="EasyPaisa">EasyPaisa</option>
+    </select>
+    <input id="phoneNumber" placeholder="Phone Number">
+    <input id="withdrawAmount" placeholder="Amount in USD">
+    <small>Maximum withdrawal: 100$</small>
+    <button class="btn" onclick="withdraw()">Submit</button>
+  </div>
+</div>
+
+<!-- FOOTER -->
+<div class="footer">
+  <button class="active" onclick="showScreen('home',this)">Home</button>
+  <button onclick="showScreen('tasks',this)">Tasks</button>
+  <button onclick="showScreen('withdraw',this)">Withdraw</button>
+</div>
+
+<!-- POPUP -->
+<div id="popup">
+  <div id="popupBox">
+    <h3 id="qText"></h3>
+    <div id="options"></div>
+    <button class="btn" onclick="closePopup()">Close</button>
+  </div>
+</div>
+
+<!-- TOAST -->
+<div id="toast"></div>
+
+<script>
+// ===== LOCAL STORAGE DAILY RESET & USER START DATE =====
+const usdToPkr = 300;
+let todayDate = new Date().toDateString();
+
+// User start date
+let userStartDate = localStorage.getItem("userStartDate");
+if(!userStartDate){
+  userStartDate = Date.now();
+  localStorage.setItem("userStartDate", userStartDate);
+}
+
+// Calculate current user day
+let currentDay = Math.floor((Date.now() - userStartDate)/(24*60*60*1000)) + 1;
+
+// Load saved state
+let savedDate = localStorage.getItem("todayDate");
+let balanceUSD = parseFloat(localStorage.getItem("balanceUSD")) || 0;
+let balancePKR = parseInt(localStorage.getItem("balancePKR")) || 0;
+let tasksCompleted = parseInt(localStorage.getItem("tasksCompleted")) || 0;
+let completedTasks = JSON.parse(localStorage.getItem("completedTasks")) || Array(10).fill(false);
+let taskResetTime = parseInt(localStorage.getItem("taskResetTime")) || 0;
+let todayQuestions = JSON.parse(localStorage.getItem("todayQuestions")) || [];
+
+// Reset daily if date changed
+if(savedDate !== todayDate){
+  completedTasks = Array(10).fill(false);
+  tasksCompleted = 0;
+  taskResetTime = 0;
+  todayQuestions = [];
+  localStorage.setItem("todayDate", todayDate);
+  localStorage.setItem("completedTasks", JSON.stringify(completedTasks));
+  localStorage.setItem("tasksCompleted", tasksCompleted);
+  localStorage.setItem("taskResetTime", taskResetTime);
+  localStorage.setItem("todayQuestions", JSON.stringify(todayQuestions));
+}
+
+// ===== SCIENCE QUESTIONS POOL =====
+const questionPool = [
+ {q:"What is the chemical symbol for water?", o:["H2O","O2","CO2","NaCl"], a:0},
+ {q:"Which planet is known as the Red Planet?", o:["Mars","Earth","Jupiter","Venus"], a:0},
+ {q:"The center of an atom is called?", o:["Electron","Nucleus","Proton","Neutron"], a:1},
+ {q:"Which gas do plants produce during photosynthesis?", o:["Oxygen","Carbon Dioxide","Nitrogen","Hydrogen"], a:0},
+ {q:"What is the speed of light?", o:["3x10^8 m/s","3x10^6 m/s","3x10^5 m/s","3x10^7 m/s"], a:0},
+ {q:"What force keeps planets in orbit?", o:["Gravity","Friction","Magnetism","Electricity"], a:0},
+ {q:"What is the boiling point of water?", o:["100°C","90°C","120°C","80°C"], a:0},
+ {q:"Which organ pumps blood through the body?", o:["Lungs","Heart","Kidney","Liver"], a:1},
+ {q:"What is H in the periodic table?", o:["Helium","Hydrogen","Hafnium","Holmium"], a:1},
+ {q:"What is the largest organ in the human body?", o:["Heart","Skin","Liver","Lungs"], a:1},
+ {q:"Which particle has a negative charge?", o:["Proton","Electron","Neutron","Photon"], a:1},
+ {q:"What is the center of our solar system?", o:["Earth","Moon","Sun","Mars"], a:2},
+ {q:"Which organ produces insulin?", o:["Liver","Pancreas","Kidney","Heart"], a:1},
+ {q:"What is the main gas in the air we breathe?", o:["Oxygen","Nitrogen","Carbon Dioxide","Hydrogen"], a:1}
+];
+
+// ===== INIT DAILY QUESTIONS =====
+if(todayQuestions.length === 0){
+  while(todayQuestions.length<10){
+    let q = questionPool[Math.floor(Math.random()*questionPool.length)];
+    if(!todayQuestions.includes(q)) todayQuestions.push(q);
+  }
+  localStorage.setItem("todayQuestions", JSON.stringify(todayQuestions));
+}
+
+// ===== GET TASK REWARD =====
+function getTaskReward(){
+  if(currentDay <= 2) return 1;  // Day 1 & 2 → 1$
+  return 0.10;                    // Day 3+ → 0.10$ per task
+}
+
+// ===== UPDATE HOME =====
+function updateHome(){
+  document.getElementById("balanceUSD").innerText = balanceUSD.toFixed(2);
+  document.getElementById("balancePKR").innerText = balancePKR;
+  document.getElementById("tasksCount").innerText = tasksCompleted;
+}
+
+// ===== RENDER TASKS =====
+function renderTasks(){
+  const taskBox=document.getElementById("taskButtons");
+  taskBox.innerHTML="";
+  for(let i=0;i<10;i++){
+    let b=document.createElement("button");
+    b.className="btn";
+    b.innerText = completedTasks[i] ? "✓ Task "+(i+1) : "Task "+(i+1);
+    if(completedTasks[i]) b.disabled=true;
+    b.onclick=()=>openQuestion(i,b);
+    taskBox.appendChild(b);
+  }
+}
+renderTasks();
+updateHome();
+
+// ===== TIMER =====
+setInterval(()=>{
+  if(taskResetTime==0){document.getElementById("timer").innerText="--:--:--"; return;}
+  let diff = taskResetTime - Date.now();
+  if(diff<=0){taskResetTime=0;document.getElementById("timer").innerText="--:--:--"; return;}
+  let h=Math.floor(diff/1000/3600);
+  let m=Math.floor((diff/1000%3600)/60);
+  let s=Math.floor(diff/1000%60);
+  document.getElementById("timer").innerText=`${h.toString().padStart(2,'0')}:${m.toString().padStart(2,'0')}:${s.toString().padStart(2,'0')}`;
+},1000);
+
+// ===== TOAST =====
+function showToast(msg){
+  const toast=document.getElementById("toast");
+  toast.innerText=msg;
+  toast.style.display="block";
+  setTimeout(()=>{toast.style.display="none";},1500);
+}
+
+// ===== QUESTION POPUP =====
+function openQuestion(i,btn){
+  let q = todayQuestions[i];
+  document.getElementById("qText").innerText = q.q;
+  const oDiv=document.getElementById("options");
+  oDiv.innerHTML="";
+  q.o.forEach((opt,idx)=>{
+    let d=document.createElement("div");
+    d.className="option";
+    d.innerText=opt;
+    d.onclick=()=>answerQuestion(i,idx,btn);
+    oDiv.appendChild(d);
+  });
+  document.getElementById("popup").style.display="flex";
+}
+
+function answerQuestion(i,selected,btn){
+  const correct = todayQuestions[i].a;
+  if(selected!==correct){showToast("Wrong answer!");closePopup(); return;}
+
+  showToast("Correct!");
+  let reward = getTaskReward();
+  balanceUSD += reward;
+  balancePKR = Math.round(balanceUSD * usdToPkr);
+  tasksCompleted++;
+  completedTasks[i]=true;
+
+  if(tasksCompleted==10 && taskResetTime==0){
+    taskResetTime = Date.now() + 24*60*60*1000;
+  }
+
+  updateHome();
+  btn.disabled=true;
+  btn.innerText="✓ Task "+(i+1);
+
+  // Save progress
+  localStorage.setItem("balanceUSD", balanceUSD);
+  localStorage.setItem("balancePKR", balancePKR);
+  localStorage.setItem("tasksCompleted", tasksCompleted);
+  localStorage.setItem("completedTasks", JSON.stringify(completedTasks));
+  localStorage.setItem("taskResetTime", taskResetTime);
+
+  closePopup();
+  renderTasks();
+}
+
+// Close popup
+function closePopup(){document.getElementById("popup").style.display="none";}
+
+// NAVIGATION
+function showScreen(id,btn){
+  document.querySelectorAll(".screen").forEach(s=>s.classList.remove("active"));
+  document.getElementById(id).classList.add("active");
+  document.querySelectorAll(".footer button").forEach(b=>b.classList.remove("active"));
+  btn.classList.add("active");
+}
+
+// WITHDRAW
+function withdraw(){
+  const method=document.getElementById("paymentMethod").value;
+  const phone=document.getElementById("phoneNumber").value;
+  const amount=parseFloat(document.getElementById("withdrawAmount").value);
+  if(!method||!phone||isNaN(amount)||amount<=0||amount>100){showToast("Invalid details!");return;}
+  if(amount>balanceUSD){showToast("Insufficient balance!");return;}
+  balanceUSD-=amount;
+  balancePKR=Math.round(balanceUSD*usdToPkr);
+  updateHome();
+  showToast(`Withdrawal Requested: ${method} - ${phone} - $${amount}`);
+}
+</script>
+</body>
+</html>
+   
